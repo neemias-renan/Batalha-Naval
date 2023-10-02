@@ -1,22 +1,9 @@
 import socket
 import random
 
-# Crie um socket TCP para o servidor
 tcp_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-"""
-Porta localhost para teste 
-"""
 tcp_server_socket.bind(('0.0.0.0', 12345))
-# tcp_server_socket.bind(('ip do host', 12345))
-tcp_server_socket.listen(5)
-
-# Crie um socket UDP para receber o nome do jogador
-udp_server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-"""
-Porta localhost para teste 
-"""
-udp_server_socket.bind(('0.0.0.0', 12346))
-# udp_server_socket.bind(('ip do host', 12346))
+tcp_server_socket.listen(2)
 
 # Função para gerar o tabuleiro do jogo
 def generate_board(size):
@@ -39,15 +26,8 @@ def guess_ship_position(board, row, col):
     else:
         return "Errou!"
 
-# Receba o nome do jogador por meio do socket UDP
-player_name, player_addr = udp_server_socket.recvfrom(1024)
-player_name = player_name.decode()
-print(f"Nome do jogador: {player_name}")
-
-
 # Defina o tamanho do tabuleiro aqui
 board_size = 3
-tcp_clients = []
 
 # Gere o tabuleiro do jogo
 board = generate_board(board_size)
@@ -55,41 +35,47 @@ print("Tabuleiro do jogo:")
 for row in board:
     print(" ".join(map(str, row)))
 
-while True:
-    # Espere por uma conexão TCP
+# Espere por duas conexões TCP
+clients = []
+
+for _ in range(2):
     conn, addr = tcp_server_socket.accept()
     print(f"Conexão TCP de {addr}")
-    tcp_clients.append(conn)
+    clients.append(conn)
 
-    # Envie o tamanho do tabuleiro para o cliente
+# Envie o tamanho do tabuleiro para os clientes
+for conn in clients:
     conn.send(str(board_size).encode())
 
-    # Inicie o jogo
-    while True:
-        # Receba os palpites do cliente
-        guess = conn.recv(1024).decode()
-        if not guess:
-            print(f"{player_name} desconectado")
-            break  # O cliente desconectou
-        row, col = map(int, guess.split())
-        
-        # Verifique o palpite e envie uma resposta ao cliente
-        result = guess_ship_position(board, row, col)
-        print(f"Palpite de {addr} | {player_name}: ({row}, {col}) -> {result}")
-                
-        # Verifique se todos os navios foram afundados
-        if all(all(cell != 1 for cell in row) for row in board):
-            result = "Todos os navios foram afundados!"
-            print(result)
-            conn.send(result.encode())
-            break
+# Inicie o jogo
+turn = 0
+while True:
+    conn = clients[turn]
+
+    guess = conn.recv(1024).decode()
+    if not guess:
+        print(f"Cliente {turn+1} desconectado")
+        break
+
+    row, col = map(int, guess.split())
+    
+    result = guess_ship_position(board, row, col)
+    print(f"Palpite de Cliente {turn+1}: ({row}, {col}) -> {result}")
             
+    if all(all(cell != 1 for cell in row) for row in board):
+        result = "Todos os navios foram afundados!"
+        print(result)
+        for conn in clients:
+            conn.send(result.encode())
+        break
+        
+    for conn in clients:
         conn.send(result.encode())
 
+    turn = (turn + 1) % 2
+
 # Feche os sockets quando o jogo terminar
-for conn in tcp_clients:
+for conn in clients:
     conn.close()
 
 tcp_server_socket.close()
-udp_server_socket.close()
-
